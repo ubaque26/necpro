@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    <title>Sistema de Asistencia</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/instascan@1.0.0/dist/instascan.min.js"></script>
+    <style>
+        .switch-view {
+            display: none;
+        }
+        .switch-view.active {
+            display: block;
+        }
+        #qrScanner {
+            width: 300px;
+            height: 300px;
+            margin: 0 auto;
+            border: 2px dashed #ccc;
+            position: relative;
+        }
+        #qrScanner video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .scan-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            height: 80%;
+            border: 4px solid rgba(59, 130, 246, 0.5);
+            pointer-events: none;
+        }
+        .table-container {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-blue-600">Sistema de Control de Asistencia</h1>
+            <div id="loginSection" class="mt-6 p-4 max-w-md mx-auto bg-white rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold mb-4">Acceso Administrativo</h2>
+                <label for="adminUsername" class="block text-sm font-medium text-gray-700 mb-1">Usuario</label>
+                <input type="text" id="adminUsername" class="w-full p-2 border rounded mb-2">
+                <label for="adminPassword" class="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+                <input type="password" id="adminPassword" class="w-full p-2 border rounded mb-2">
+                <button onclick="checkLogin()" class="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600">Ingresar</button>
+            </div>
+            <div id="appControls" class="flex justify-center space-x-4 mt-4 hidden">
+                <button onclick="switchView('admin')" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Admin</button>
+                <button onclick="switchView('checkin')" class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">Registro Entrada</button>
+                <button onclick="switchView('checkout')" class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">Registro Salida</button>
+            </div>
+        </header>
+
+        <!-- Panel de Administración -->
+        <div id="adminView" class="switch-view">
+            <h2 class="text-2xl font-semibold mb-4">Gestión de Colaboradores</h2>
+            
+            <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+                <h3 class="text-xl font-medium mb-4">Agregar/Editar Colaborador</h3>
+                <form id="employeeForm" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <input type="hidden" id="employeeId">
+                    <div>
+                        <label for="employeeName" class="block text-sm font-medium text-gray-700">Nombre Completo</label>
+                        <input type="text" id="employeeName" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2" required>
+                    </div>
+                    <div>
+                        <label for="employeePosition" class="block text-sm font-medium text-gray-700">Puesto</label>
+                        <input type="text" id="employeePosition" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2" required>
+                    </div>
+                    <div>
+                        <label for="employeeDepartment" class="block text-sm font-medium text-gray-700">Departamento</label>
+                        <input type="text" id="employeeDepartment" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2" required>
+                    </div>
+                    <div class="flex items-end">
+                        <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Guardar</button>
+                        <button type="button" onclick="clearForm()" class="ml-2 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">Limpiar</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-medium">Exportar Datos</h3>
+                    <button onclick="logout()" class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">Cerrar Sesión</button>
+                    <div class="space-x-2">
+                        <button onclick="exportEmployeesExcel()" class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">Exportar Colaboradores</button>
+                        <button onclick="exportAttendanceExcel()" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Exportar Asistencias</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-xl font-medium mb-4">Lista de Colaboradores</h3>
+                <div class="table-container">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Puesto</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Departamento</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="employeeList" class="bg-white divide-y divide-gray-200">
+                            <!-- Aquí se cargarán los colaboradores -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel de Registro de Entrada -->
+        <div id="checkinView" class="switch-view">
+            <div class="bg-white p-6 rounded-lg shadow-md max-w-2xl mx-auto">
+                <h2 class="text-2xl font-semibold mb-4 text-center">Registro de Entrada</h2>
+                
+                <div class="flex flex-col md:flex-row gap-8">
+                    <div class="flex-1">
+                        <div id="qrScanner" class="mb-4">
+                            <div class="scan-overlay"></div>
+                        </div>
+                        <p class="text-center text-gray-600 mb-4">Accede desde https://tu-dominio.com para escanear tu código QR</p>
+                    </div>
+                    
+                    <div class="flex-1">
+                        <h3 class="text-lg font-medium mb-2">O ingresa manualmente el ID:</h3>
+                        <div class="flex">
+                            <input type="text" id="manualCheckinId" class="flex-1 rounded-l-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2" placeholder="ID del colaborador">
+                            <button onclick="manualCheckin()" class="px-4 py-2 bg-green-500 text-white rounded-r-md hover:bg-green-600">Registrar</button>
+                        </div>
+                        
+                        <div id="checkinResult" class="mt-4 p-4 rounded hidden"></div>
+                    </div>
+                </div>
+                
+                <div class="mt-8">
+                    <h3 class="text-lg font-medium mb-2">Últimos registros de entrada</h3>
+                    <div class="table-container">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hora</th>
+                                </tr>
+                            </thead>
+                            <tbody id="checkinRecords" class="bg-white divide-y divide-gray-200">
+                                <!-- Aquí se cargarán los registros de entrada -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel de Registro de Salida -->
+        <div id="checkoutView" class="switch-view">
+            <div class="bg-white p-6 rounded-lg shadow-md max-w-2xl mx-auto">
+                <h2 class="text-2xl font-semibold mb-4 text-center">Registro de Salida</h2>
+                
+                <div class="flex flex-col md:flex-row gap-8">
+                    <div class="flex-1">
+                        <div id="qrScannerCheckout" class="mb-4">
+                            <div class="scan-overlay"></div>
+                        </div>
+                        <p class="text-center text-gray-600 mb-4">Accede desde https://tu-dominio.com para registrar tu salida</p>
+                    </div>
+                    
+                    <div class="flex-1">
+                        <h3 class="text-lg font-medium mb-2">O ingresa manualmente el ID:</h3>
+                        <div class="flex">
+                            <input type="text" id="manualCheckoutId" class="flex-1 rounded-l-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2" placeholder="ID del colaborador">
+                            <button onclick="manualCheckout()" class="px-4 py-2 bg-red-500 text-white rounded-r-md hover:bg-red-600">Registrar</button>
+                        </div>
+                        
+                        <div id="checkoutResult" class="mt-4 p-4 rounded hidden"></div>
+                    </div>
+                </div>
+                
+                <div class="mt-8">
+                    <h3 class="text-lg font-medium mb-2">Últimos registros de salida</h3>
+                    <div class="table-container">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hora</th>
+                                </tr>
+                            </thead>
+                            <tbody id="checkoutRecords" class="bg-white divide-y divide-gray-200">
+                                <!-- Aquí se cargarán los registros de salida -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Datos almacenados en localStorage
+        // Generar códigos QR fijos al cargar
+        document.addEventListener('DOMContentLoaded', function() {
+            generateStaticQRCodes();
+            // Resto del código...
+        });
+
+        function generateStaticQRCodes() {
+            // QR para entrada
+            new QRCode(document.getElementById('staticCheckinQr'), {
+                text: ENTRY_QR,
+                width: 256,
+                height: 256
+            });
+            // QR para salida
+            new QRCode(document.getElementById('staticCheckoutQr'), {
+                text: EXIT_QR,
+                width: 256,
+                height: 256
+            });
+        }
+        let employees = JSON.parse(localStorage.getItem('employees')) || [];
+        let attendanceRecords = JSON.parse(localStorage.getItem('attendance')) || { checkins: [], checkouts: [] };
+        const ADMIN_CREDENTIALS = {
+            username: "admin",
+            password: "admin123"
+        };
+        
+        // Fixed QR codes for entry/exit points
+        const ENTRY_QR = "ASISTENCIA:ENTRADA";
+        const EXIT_QR = "ASISTENCIA:SALIDA";
+        let isAdmin = false;
+        let scanner = null;
+        let checkoutScanner = null;
+
+        // Inicialización
+        document.addEventListener('DOMContentLoaded', function() {
+            // Verificar sesión existente
+            if (localStorage.getItem('adminLoggedIn') === 'true') {
+                isAdmin = true;
+                document.getElementById('loginSection').classList.add('hidden');
+                document.getElementById('appControls').classList.remove('hidden');
+            }
+            // Mostrar vista por defecto
+            switchView(isAdmin ? 'admin' : 'checkin');
+            
+            // Cargar datos
+            renderEmployeeList();
+            renderCheckinRecords();
+            renderCheckoutRecords();
+            
+            // Configurar formulario
+            document.getElementById('employeeForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                saveEmployee();
+            });
+        });
+
+        // Control de acceso
+        function checkLogin() {
+            const username = document.getElementById('adminUsername').value;
+            const password = document.getElementById('adminPassword').value;
+            if (username === ADMIN_CREDENTIALS.username && password === ADMIN_CREDENTIALS.password) {
+                isAdmin = true;
+                localStorage.setItem('adminLoggedIn', 'true');
+                document.getElementById('loginSection').classList.add('hidden');
+                document.getElementById('appControls').classList.remove('hidden');
+                switchView('checkin');
+            } else {
+                alert('Contraseña incorrecta');
+            }
+        }
+
+        function logout() {
+            document.getElementById('adminUsername').value = '';
+            isAdmin = false;
+            localStorage.removeItem('adminLoggedIn');
+            document.getElementById('loginSection').classList.remove('hidden');
+            document.getElementById('appControls').classList.add('hidden');
+        }
+
+        // Cambiar entre vistas
+        function switchView(view) {
+            if (view === 'admin' && !isAdmin) {
+                alert('Acceso denegado. Se requiere permisos de administrador.');
+                return;
+            }
+            // Detener scanners si están activos
+            if (scanner) {
+                scanner.stop();
+                scanner = null;
+            }
+            if (view !== 'checkin' && checkoutScanner) {
+                checkoutScanner.stop();
+                checkoutScanner = null;
+            }
+            
+            // Ocultar todas las vistas
+            document.querySelectorAll('.switch-view').forEach(el => {
+                el.classList.remove('active');
+            });
+            
+            // Mostrar vista seleccionada
+            document.getElementById(view + 'View').classList.add('active');
+            
+            // Reuse same scanner for both views
+            if (view === 'checkin' || view === 'checkout') {
+                setTimeout(initScanner, 100, 'qrScanner', view === 'checkin' ? handleCheckin : handleCheckout);
+            }
+        }
+
+        // Inicializar lector QR
+        function initScanner(elementId, callback) {
+            if (!window.Instascan) {
+                console.error("Instascan no está cargado");
+                alert("Este sistema requiere HTTPS para funcionar correctamente. Por favor accede a https://tu-dominio.com");
+                return;
+            }
+            
+            scanner = new Instascan.Scanner({
+                video: document.getElementById(elementId),
+                mirror: false,
+                facingMode: "environment",
+                captureImage: false,
+                backgroundScan: true,
+                refractoryPeriod: 5000,
+                scanPeriod: 1
+            });
+            
+            scanner.addListener('scan', function(content) {
+                callback(content);
+            });
+            
+            Instascan.Camera.getCameras()
+                .then(function(cameras) {
+                    if (cameras.length > 0) {
+                        // Prefer rear camera on mobile
+                        const rearCamera = cameras.find(c => c.facing === 'environment');
+                        const camera = rearCamera || cameras[0];
+                        scanner.start(camera);
+                    } else {
+                        const resultEl = elementId === 'qrScanner' ? 
+                            document.getElementById('checkinResult') : 
+                            document.getElementById('checkoutResult');
+                        resultEl.textContent = "No se encontraron cámaras disponibles";
+                        resultEl.className = 'bg-red-100 text-red-700';
+                        resultEl.classList.remove('hidden');
+                    }
+                })
+                .catch(function(e) {
+                    console.error("Error al acceder a la cámara:", e);
+                    alert("Error al acceder a la cámara. Este sistema requiere HTTPS (https://tu-dominio.com) para acceder a la cámara. Asegúrate de haber dado permisos.");
+                });
+        }
+
+        // Guardar colaborador
+        function saveEmployee() {
+            const idInput = document.getElementById('employeeId');
+            const name = document.getElementById('employeeName').value;
+            const position = document.getElementById('employeePosition').value;
+            const department = document.getElementById('employeeDepartment').value;
+            
+            if (idInput.value) {
+                // Editar colaborador existente
+                const index = employees.findIndex(e => e.id === idInput.value);
+                if (index !== -1) {
+                    employees[index] = {
+                        ...employees[index],
+                        name,
+                        position,
+                        department
+                    };
+                }
+            } else {
+                // Agregar nuevo colaborador
+                const id = 'EMP-' + Date.now().toString().slice(-6);
+                employees.push({
+                    id,
+                    name,
+                    position,
+                    department,
+                    qrCode: generateQRCodeData(id)
+                });
+            }
+            
+            localStorage.setItem('employees', JSON.stringify(employees));
+            clearForm();
+            renderEmployeeList();
+        }
+
+        // Generar código QR (simulado)
+        function generateQRCodeData(id) {
+            return `EMPLEADO:${id}`; // Simple format for general QR code
+        }
+
+        function validateQRCode(content) {
+            const parts = content.split(':');
+            if (parts.length < 2) return null;
+            
+            if (content === ENTRY_QR || content === EXIT_QR) {
+                return {
+                    type: parts[1],
+                    id: null
+                };
+            }
+            return {
+                type: "EMPLEADO",
+                id: parts[1]
+            };
+        }
+
+        // Limpiar formulario
+        function clearForm() {
+            document.getElementById('adminUsername').value = '';
+            document.getElementById('employeeForm').reset();
+            document.getElementById('employeeId').value = '';
+        }
+
+        // Editar colaborador
+        function editEmployee(id) {
+            const employee = employees.find(e => e.id === id);
+            if (employee) {
+                document.getElementById('employeeId').value = employee.id;
+                document.getElementById('employeeName').value = employee.name;
+                document.getElementById('employeePosition').value = employee.position;
+                document.getElementById('employeeDepartment').value = employee.department;
+                document.getElementById('employeeForm').scrollIntoView();
+            }
+        }
+
+        // Eliminar colaborador
+        function deleteEmployee(id) {
+            if (confirm('¿Estás seguro de eliminar este colaborador?')) {
+                employees = employees.filter(e => e.id !== id);
+                localStorage.setItem('employees', JSON.stringify(employees));
+                renderEmployeeList();
+            }
+        }
+
+        // Mostrar lista de colaboradores
+        function renderEmployeeList() {
+            const tbody = document.getElementById('employeeList');
+            tbody.innerHTML = '';
+            
+            employees.forEach(employee => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${employee.id}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${employee.name}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${employee.position}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${employee.department}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <button onclick="editEmployee('${employee.id}')" class="text-blue-600 hover:text-blue-900 mr-2">Editar</button>
+                        <button onclick="deleteEmployee('${employee.id}')" class="text-red-600 hover:text-red-900">Eliminar</button>
+                        <button onclick="showQRCode('${employee.id}')" class="text-green-600 hover:text-green-900 ml-2">Ver QR</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Mostrar código QR del colaborador
+        function showQRCode(id) {
+            const employee = employees.find(e => e.id === id);
+            if (!employee) return;
+            
+            const qrContent = employee.qrCode || generateQRCodeData(id);
+            
+            // Actualizar código QR si no existe
+            if (!employee.qrCode) {
+                employee.qrCode = qrContent;
+                localStorage.setItem('employees', JSON.stringify(employees));
+            }
+            
+            // Mostrar modal con el QR
+            const modal = `
+                <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div class="bg-white p-6 rounded-lg max-w-sm w-full">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-lg font-medium">Código QR de ${employee.name}</h3>
+                            <button onclick="this.parentElement.parentElement.parentElement.remove()" class="text-gray-500 hover:text-gray-700">&times;</button>
+                        </div>
+                        <div id="qrCodeDisplay" class="w-full h-64 flex items-center justify-center mb-4 border border-gray-200"></div>
+                        <p class="text-sm text-gray-600 text-center">ID: ${employee.id}</p>
+                    </div>
+                </div>
+            `;
+            
+            const div = document.createElement('div');
+            div.innerHTML = modal;
+            document.body.appendChild(div);
+            
+            // Generar QR
+            new QRCode(document.getElementById('qrCodeDisplay'), {
+                text: qrContent,
+                width: 200,
+                height: 200
+            });
+        }
+
+        // Registrar entrada
+        function handleCheckin(content) {
+            const id = validateQRCode(content);
+            if (!id) {
+                alert("Código QR inválido. Escanea el código correcto.");
+                return;
+            }
+            registerCheckin(id);
+        }
+
+        // Registrar entrada manual
+        function manualCheckin() {
+            const id = document.getElementById('manualCheckinId').value;
+            if (!id) return;
+            
+            registerCheckin(id);
+            document.getElementById('manualCheckinId').value = '';
+        }
+
+        function registerCheckin(id) {
+            const employee = employees.find(e => e.id === id);
+            const resultEl = document.getElementById('checkinResult');
+            
+            if (employee) {
+                // Registrar entrada
+                const now = new Date();
+                attendanceRecords.checkins.unshift({
+                    employeeId: employee.id,
+                    employeeName: employee.name,
+                    timestamp: now.toISOString(),
+                    date: now.toLocaleDateString(),
+                    time: now.toLocaleTimeString()
+                });
+                
+                localStorage.setItem('attendance', JSON.stringify(attendanceRecords));
+                renderCheckinRecords();
+                
+                // Mostrar resultado
+                resultEl.textContent = `Entrada registrada: ${employee.name} a las ${now.toLocaleTimeString()}`;
+                resultEl.classList.remove('hidden', 'bg-red-100', 'text-red-700', 'bg-green-100', 'text-green-700');
+                resultEl.classList.add('bg-green-100', 'text-green-700');
+                resultEl.classList.remove('hidden');
+            } else {
+                // Mostrar error
+                resultEl.textContent = `Colaborador con ID ${id} no encontrado`;
+                resultEl.classList.remove('hidden', 'bg-red-100', 'text-red-700', 'bg-green-100', 'text-green-700');
+                resultEl.classList.add('bg-red-100', 'text-red-700');
+                resultEl.classList.remove('hidden');
+            }
+        }
+
+        // Registrar salida
+        function handleCheckout(content) {
+            const id = validateQRCode(content);
+            if (!id) {
+                alert("Código QR inválido. Escanea el código correcto.");
+                return;
+            }
+            registerCheckout(id);
+        }
+
+        // Registrar salida manual
+        function manualCheckout() {
+            const id = document.getElementById('manualCheckoutId').value;
+            if (!id) return;
+            
+            registerCheckout(id);
+            document.getElementById('manualCheckoutId').value = '';
+        }
+
+        function registerCheckout(id) {
+            const employee = employees.find(e => e.id === id);
+            const resultEl = document.getElementById('checkoutResult');
+            
+            if (employee) {
+                // Registrar salida
+                const now = new Date();
+                attendanceRecords.checkouts.unshift({
+                    employeeId: employee.id,
+                    employeeName: employee.name,
+                    timestamp: now.toISOString(),
+                    date: now.toLocaleDateString(),
+                    time: now.toLocaleTimeString()
+                });
+                
+                localStorage.setItem('attendance', JSON.stringify(attendanceRecords));
+                renderCheckoutRecords();
+                
+                // Mostrar resultado
+                resultEl.textContent = `Salida registrada: ${employee.name} a las ${now.toLocaleTimeString()}`;
+                resultEl.classList.remove('hidden', 'bg-red-100', 'text-red-700', 'bg-green-100', 'text-green-700');
+                resultEl.classList.add('bg-green-100', 'text-green-700');
+                resultEl.classList.remove('hidden');
+            } else {
+                // Mostrar error
+                resultEl.textContent = `Colaborador con ID ${id} no encontrado`;
+                resultEl.classList.remove('hidden', 'bg-red-100', 'text-red-700', 'bg-green-100', 'text-green-700');
+                resultEl.classList.add('bg-red-100', 'text-red-700');
+                resultEl.classList.remove('hidden');
+            }
+        }
+
+        // Mostrar registros de entrada
+        function renderCheckinRecords() {
+            const tbody = document.getElementById('checkinRecords');
+            tbody.innerHTML = '';
+            
+            // Mostrar solo los últimos 10 registros
+            const lastCheckins = attendanceRecords.checkins.slice(0, 10);
+            
+            if (lastCheckins.length === 0) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td colspan="3" class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">No hay registros de entrada</td>
+                `;
+                tbody.appendChild(tr);
+                return;
+            }
+            
+            lastCheckins.forEach(record => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${record.employeeId}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${record.employeeName}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${record.time}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Exportar datos a Excel
+        function exportToExcel(data, fileName, headers) {
+            const ws = XLSX.utils.json_to_sheet(data, { header: headers });
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Datos");
+            XLSX.writeFile(wb, `${fileName}.xlsx`);
+        }
+
+        function exportEmployeesExcel() {
+            const headers = ["ID", "Nombre", "Puesto", "Departamento"];
+            const data = employees.map(emp => ({
+                ID: emp.id,
+                Nombre: emp.name,
+                Puesto: emp.position,
+                Departamento: emp.department
+            }));
+            exportToExcel(data, "colaboradores", headers);
+        }
+
+        function exportAttendanceExcel() {
+            const headers = ["Tipo", "ID Empleado", "Nombre", "Fecha", "Hora", "Timestamp"];
+            const data = [
+                ...attendanceRecords.checkins.map(r => ({
+                    Tipo: "ENTRADA",
+                    "ID Empleado": r.employeeId,
+                    Nombre: r.employeeName,
+                    Fecha: r.date,
+                    Hora: r.time,
+                    Timestamp: r.timestamp
+                })),
+                ...attendanceRecords.checkouts.map(r => ({
+                    Tipo: "SALIDA",
+                    "ID Empleado": r.employeeId,
+                    Nombre: r.employeeName,
+                    Fecha: r.date,
+                    Hora: r.time,
+                    Timestamp: r.timestamp
+                }))
+            ].sort((a, b) => new Date(b.Timestamp) - new Date(a.Timestamp));
+            exportToExcel(data, "asistencias", headers);
+        }
+
+        // Mostrar registros de salida
+        function renderCheckoutRecords() {
+            const tbody = document.getElementById('checkoutRecords');
+            tbody.innerHTML = '';
+            
+            // Mostrar solo los últimos 10 registros
+            const lastCheckouts = attendanceRecords.checkouts.slice(0, 10);
+            
+            if (lastCheckouts.length === 0) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td colspan="3" class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">No hay registros de salida</td>
+                `;
+                tbody.appendChild(tr);
+                return;
+            }
+            
+            lastCheckouts.forEach(record => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${record.employeeId}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${record.employeeName}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${record.time}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    </script>
+</body>
+</html>
